@@ -1,0 +1,64 @@
+name: "Vprofile IAC"
+on: 
+   push: 
+        branches:
+            - main
+            - stage
+        paths: 
+            - 'terraform/**'
+
+   pull_request: 
+        branches:
+            - main
+            - stage
+
+        paths:
+            - 'terraform/**'
+
+env:
+    # CREDENTIAL FOR AWS
+    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    # S3 bucket for Terraform state
+    BUCKET_TF_STATE: ${{ secrets.BUCKET_TF_STATE }}
+    AWS_REGION: "ap-south-1"
+    EKS_CLUSTER_NAME: "vprofile-eks"
+
+jobs: 
+   terraform:
+      name: "apply terraform code"
+      runs-on: ubuntu-latest
+      defaults:
+        run: 
+          shell: bash
+          working-directory: ./terraform
+      steps:
+        - name: "Checkout source code"
+          uses: actions/checkout@v5
+
+
+        - name: "setup terraform with a specified version on the runner "
+          uses: hashicorp/setup-terraform@v3
+          with:
+            terraform_version: "1.1.7"
+
+        - name: "terraform init"
+          id: init
+          run: terraform init -backend-config="bucket=${{ env.BUCKET_TF_STATE }}" -backend-config="region=${{ env.AWS_REGION }}" -backend-config="key=${{ github.ref }}.tfstate"
+
+        - name: "terraform fmt check"
+          id: fmt
+          run: terraform fmt -check -recursive
+
+        - name: "terraform validate"
+          id: validate
+          run: terraform validate
+
+        - name: "terraform plan"
+          id: plan
+          run: terraform plan -no-color -out planfile
+          continue-on-error: true
+
+        - name: "terraform plan status"
+          if: steps.plan.outcome == 'failure'
+          run: exit 1
